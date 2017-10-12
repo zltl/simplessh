@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"flag"
 	"fmt"
 	"golang.org/x/crypto/ssh"
@@ -76,38 +75,40 @@ func main() {
 			log.Fatal("error copy file: " + err.Error())
 		}
 	case "ssh":
-		var res string
 		if len(*shell) == 0 {
-			res, err = exeCmd(client, *cmd)
+			exeCmd(client, *cmd)
 		} else {
-			res, err = exeScript(client, *shell)
+			exeScript(client, *shell)
 		}
-		if err != nil {
-			log.Fatal("exe failed: " + err.Error())
-		}
-		fmt.Println(res)
 	}
 }
 
-func exeCmd(client *ssh.Client, cmd string) (string, error) {
+func exeCmd(client *ssh.Client, cmd string) {
 	log.Println(">" + cmd)
 	session, err := client.NewSession()
 	if err != nil {
 		panic("Failed to create session: " + err.Error())
 	}
 	defer session.Close()
-	var b bytes.Buffer
-	session.Stdout = &b
-	if err := session.Run(cmd); err != nil {
-		log.Println(err.Error())
-		return "", err
+	stdout, err := session.StdoutPipe()
+	if err != nil {
+		panic("error stdout pipe:" + err.Error())
 	}
-	return b.String(), nil
+	go io.Copy(os.Stdout, stdout)
+	stderr, err := session.StderrPipe()
+	if err != nil {
+		panic("error stderr pipe:" + err.Error())
+	}
+	go io.Copy(os.Stderr, stderr)
+
+	if err := session.Run(cmd); err != nil {
+		log.Fatal(err.Error())
+	}
 }
 
-func exeScript(client *ssh.Client, shell string) (string, error) {
+func exeScript(client *ssh.Client, shell string) {
 	copyFile(client, shell)
-	return exeCmd(client, "/bin/bash ss-tmp/"+path.Base(shell))
+	exeCmd(client, "/bin/bash ss-tmp/"+path.Base(shell))
 }
 
 func copyFile(client *ssh.Client, src string) error {
